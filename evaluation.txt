@@ -1,0 +1,56 @@
+MODEL EVALUATION
+======================================================================
+
+Using device: cpu
+
+Loading model...
+Model built successfully!
+Total parameters: 7,479,682
+Trainable parameters: 2,683,906
+Model loaded from models/model_weights.pth
+Best validation accuracy: 1.0000
+Epoch: 3
+
+Loading test dataset...
+Loaded 5216 images for train mode
+  Normal: 1341, Pneumonia: 3875
+Loaded 16 images for val mode
+  Normal: 8, Pneumonia: 8
+Loaded 624 images for test mode
+  Normal: 234, Pneumonia: 390
+
+Evaluating on test set...
+Testing: 100%|██████████████████████████████████████████████████████████████████████████████████████████████| 20/20 [01:25<00:00,  4.29s/it] 
+
+Computing metrics...
+Metrics saved to results/metrics.csv
+
+Generating Grad-CAM visualizations and computing BLEU scores...
+Grad-CAM + BLEU:  10%|████████▋                                                                              | 2/20 [01:11<10:44, 35.81s/it] 
+
+======================================================================
+EVALUATION RESULTS
+======================================================================
+
+Classification Metrics:
+  Accuracy: 0.8526
+  Precision: 0.8157
+  Recall: 0.9872
+  F1_score: 0.8933
+  Auc_roc: 0.9577
+  Specificity: 0.6282
+  Sensitivity: 0.9872
+
+BLEU Score: 0.0185
+
+Confusion Matrix:
+[[147  87]
+ [  5 385]]
+
+======================================================================
+Files saved to: results
+  - metrics.csv
+  - confusion_matrix.png
+  - roc_curve.png
+  - metrics_bar.png
+  - classification_report.txt
