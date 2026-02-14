@@ -39,6 +39,7 @@ ENV/
 *.pth
 *.pt
 !models/.gitkeep
+!models/model_weights.pth
 
 # Data
 data/
