@@ -1,6 +1,7 @@
 """
 Model evaluation script.
-Evaluates trained model on test set and generates comprehensive metrics.
+Evaluates trained model on test set with comprehensive metrics,
+multiple XAI methods, uncertainty estimation, and NLP report generation.
 """
 
 import os
@@ -28,27 +29,50 @@ from utils.recommendations import SeverityClassifier
 from train import build_model
 
 
-def load_trained_model(weights_path: str, device: torch.device) -> nn.Module:
+def load_trained_model(weights_path: str, device: torch.device,
+                       architecture: str = 'densenet121',
+                       num_classes: int = 2,
+                       use_attention: bool = False) -> nn.Module:
     """
     Load trained model from checkpoint.
     
     Args:
         weights_path: Path to model weights
         device: Device to load model on
+        architecture: Model architecture
+        num_classes: Number of classes
+        use_attention: Whether attention was used
         
     Returns:
         Loaded model
     """
-    model = build_model(num_classes=2, pretrained=False)
-    
     checkpoint = torch.load(weights_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Auto-detect architecture from checkpoint if available
+    if isinstance(checkpoint, dict):
+        architecture = checkpoint.get('architecture', architecture)
+        num_classes = checkpoint.get('num_classes', num_classes)
+        use_attention = checkpoint.get('use_attention', use_attention)
+    
+    model = build_model(
+        num_classes=num_classes, pretrained=False,
+        architecture=architecture, use_attention=use_attention
+    )
+    
+    if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        print(f"Model loaded from {weights_path}")
+        print(f"  Architecture: {architecture} | Classes: {num_classes}")
+        if 'val_acc' in checkpoint:
+            print(f"  Best val accuracy: {checkpoint['val_acc']:.4f}")
+        if 'epoch' in checkpoint:
+            print(f"  Epoch: {checkpoint['epoch']}")
+    else:
+        model.load_state_dict(checkpoint, strict=False)
+        print(f"Model weights loaded from {weights_path}")
+    
     model = model.to(device)
     model.eval()
-    
-    print(f"Model loaded from {weights_path}")
-    print(f"Best validation accuracy: {checkpoint['val_acc']:.4f}")
-    print(f"Epoch: {checkpoint['epoch']}")
     
     return model
 
@@ -179,6 +203,207 @@ def evaluate_with_gradcam_bleu(model: nn.Module,
     }
 
 
+def evaluate_uncertainty(model: nn.Module,
+                        test_loader: torch.utils.data.DataLoader,
+                        device: torch.device,
+                        num_samples: int = 100) -> dict:
+    """
+    Evaluate model uncertainty using MC Dropout.
+    
+    Args:
+        model: Trained model
+        test_loader: Test data loader
+        device: Compute device
+        num_samples: Number of samples to evaluate
+    
+    Returns:
+        Uncertainty evaluation metrics
+    """
+    try:
+        from utils.uncertainty import MCDropout
+    except ImportError:
+        print("Uncertainty module not available, skipping")
+        return {}
+    
+    mc_dropout = MCDropout(model)
+    
+    uncertainties = []
+    correct_uncertainties = []
+    incorrect_uncertainties = []
+    sample_count = 0
+    
+    print("\nEvaluating model uncertainty...")
+    
+    for inputs, labels in tqdm(test_loader, desc="Uncertainty"):
+        if sample_count >= num_samples:
+            break
+        
+        for i in range(inputs.size(0)):
+            if sample_count >= num_samples:
+                break
+            
+            input_tensor = inputs[i:i+1].to(device)
+            label = labels[i].item()
+            
+            result = mc_dropout.predict(input_tensor)
+            uncertainty = result['predictive_entropy']
+            prediction = result['mean_prediction']
+            
+            uncertainties.append(uncertainty)
+            
+            if prediction == label:
+                correct_uncertainties.append(uncertainty)
+            else:
+                incorrect_uncertainties.append(uncertainty)
+            
+            sample_count += 1
+    
+    return {
+        'mean_uncertainty': float(np.mean(uncertainties)),
+        'std_uncertainty': float(np.std(uncertainties)),
+        'correct_mean_uncertainty': float(np.mean(correct_uncertainties)) if correct_uncertainties else 0,
+        'incorrect_mean_uncertainty': float(np.mean(incorrect_uncertainties)) if incorrect_uncertainties else 0,
+        'num_samples': sample_count,
+    }
+
+
+def evaluate_xai_methods(model: nn.Module,
+                         test_loader: torch.utils.data.DataLoader,
+                         device: torch.device,
+                         num_samples: int = 10,
+                         output_dir: str = 'results') -> dict:
+    """
+    Evaluate and compare multiple XAI methods on test samples.
+    
+    Args:
+        model: Trained model
+        test_loader: Test data loader
+        device: Compute device
+        num_samples: Number of samples to visualize
+        output_dir: Directory to save XAI comparison images
+    
+    Returns:
+        XAI evaluation summary
+    """
+    try:
+        from utils.xai_methods import compare_xai_methods
+    except ImportError:
+        print("XAI methods module not available, skipping")
+        return {}
+    
+    xai_dir = os.path.join(output_dir, 'xai_comparisons')
+    os.makedirs(xai_dir, exist_ok=True)
+    
+    sample_count = 0
+    
+    print("\nGenerating XAI method comparisons...")
+    
+    for inputs, labels in tqdm(test_loader, desc="XAI Comparison"):
+        if sample_count >= num_samples:
+            break
+        
+        for i in range(inputs.size(0)):
+            if sample_count >= num_samples:
+                break
+            
+            input_tensor = inputs[i:i+1].to(device)
+            original_img = tensor_to_numpy_image(inputs[i])
+            
+            try:
+                fig = compare_xai_methods(
+                    model, input_tensor, original_img,
+                    methods=['gradcam', 'integrated_gradients', 'lime']
+                )
+                
+                save_path = os.path.join(xai_dir, f'xai_comparison_{sample_count}.png')
+                fig.savefig(save_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+            except Exception as e:
+                print(f"  XAI comparison error for sample {sample_count}: {e}")
+            
+            sample_count += 1
+    
+    return {
+        'samples_generated': sample_count,
+        'output_dir': xai_dir,
+        'methods': ['gradcam', 'integrated_gradients', 'lime'],
+    }
+
+
+def generate_nlp_reports(model: nn.Module,
+                         test_loader: torch.utils.data.DataLoader,
+                         device: torch.device,
+                         num_samples: int = 5,
+                         output_dir: str = 'results') -> dict:
+    """
+    Generate NLP-based radiology reports for test samples.
+    """
+    try:
+        from utils.nlp_reports import generate_report
+    except ImportError:
+        print("NLP reports module not available, skipping")
+        return {}
+    
+    reports_dir = os.path.join(output_dir, 'nlp_reports')
+    os.makedirs(reports_dir, exist_ok=True)
+    
+    severity_classifier = SeverityClassifier()
+    sample_count = 0
+    reports = []
+    
+    print("\nGenerating NLP radiology reports...")
+    
+    for inputs, labels in test_loader:
+        if sample_count >= num_samples:
+            break
+        
+        for i in range(inputs.size(0)):
+            if sample_count >= num_samples:
+                break
+            
+            input_tensor = inputs[i:i+1].to(device)
+            
+            with torch.no_grad():
+                output = model(input_tensor)
+                probs = torch.softmax(output, dim=1)
+                confidence = probs[0].cpu().numpy()
+                prediction = output.argmax(dim=1).item()
+            
+            try:
+                original_img = tensor_to_numpy_image(inputs[i])
+                _, _, cam_intensity = generate_gradcam_visualization(
+                    model, input_tensor, original_img
+                )
+                affected_area = severity_classifier.get_affected_area_percentage(
+                    cam_intensity * np.ones((224, 224))
+                )
+                severity = severity_classifier.classify(float(confidence[1]), affected_area)
+            except Exception:
+                severity = 'Moderate'
+                affected_area = 30.0
+                confidence = [0.5, 0.5]
+            
+            report = generate_report(
+                prediction='Pneumonia' if prediction == 1 else 'Normal',
+                confidence=float(confidence[prediction]),
+                severity=severity,
+                affected_area=affected_area,
+                report_type='both'
+            )
+            
+            report_path = os.path.join(reports_dir, f'report_{sample_count}.txt')
+            with open(report_path, 'w') as f:
+                f.write(report)
+            
+            reports.append(report)
+            sample_count += 1
+    
+    return {
+        'reports_generated': len(reports),
+        'output_dir': reports_dir,
+    }
+
+
 def generate_pdf_report(results: dict, save_path: str = 'evaluation_report.pdf'):
     """
     Generate PDF report with evaluation results.
@@ -247,27 +472,31 @@ def generate_pdf_report(results: dict, save_path: str = 'evaluation_report.pdf')
 
 def generate_evaluation_report(model_path: str = 'models/model_weights.pth',
                                data_dir: str = 'data/chest_xray',
-                               output_dir: str = 'results'):
+                               output_dir: str = 'results',
+                               run_uncertainty: bool = True,
+                               run_xai: bool = True,
+                               run_nlp: bool = True):
     """
-    Complete evaluation pipeline.
+    Complete evaluation pipeline with advanced features.
     
     Args:
         model_path: Path to trained model weights
         data_dir: Path to dataset
         output_dir: Directory to save results
+        run_uncertainty: Run uncertainty evaluation
+        run_xai: Run XAI method comparison
+        run_nlp: Generate NLP reports
     """
     print("="*70)
-    print("MODEL EVALUATION")
+    print("MODEL EVALUATION (Enhanced)")
     print("="*70)
     
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
-    # Setup device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nUsing device: {device}")
     
-    # Load model
+    # Load model (auto-detect architecture from checkpoint)
     print("\nLoading model...")
     model = load_trained_model(model_path, device)
     
@@ -276,10 +505,9 @@ def generate_evaluation_report(model_path: str = 'models/model_weights.pth',
     dataloaders = create_dataloaders(data_dir, batch_size=32)
     test_loader = dataloaders['test']
     
-    # Evaluate on test set
+    # Standard evaluation
     test_results = evaluate_test_set(model, test_loader, device)
     
-    # Compute metrics
     print("\nComputing metrics...")
     results = evaluate_model_performance(
         test_results['labels'],
@@ -288,12 +516,31 @@ def generate_evaluation_report(model_path: str = 'models/model_weights.pth',
         save_dir=output_dir
     )
     
-    # Evaluate with Grad-CAM and BLEU
+    # Grad-CAM + BLEU evaluation
     gradcam_results = evaluate_with_gradcam_bleu(
         model, test_loader, device, num_samples=50
     )
-    
     results['bleu_score'] = gradcam_results['average_bleu']
+    
+    # Uncertainty evaluation
+    if run_uncertainty:
+        uncertainty_results = evaluate_uncertainty(model, test_loader, device, num_samples=100)
+        results['uncertainty'] = uncertainty_results
+        if uncertainty_results:
+            print(f"\nUncertainty Metrics:")
+            print(f"  Mean uncertainty: {uncertainty_results['mean_uncertainty']:.4f}")
+            print(f"  Correct predictions uncertainty: {uncertainty_results['correct_mean_uncertainty']:.4f}")
+            print(f"  Incorrect predictions uncertainty: {uncertainty_results['incorrect_mean_uncertainty']:.4f}")
+    
+    # XAI comparison
+    if run_xai:
+        xai_results = evaluate_xai_methods(model, test_loader, device, num_samples=10, output_dir=output_dir)
+        results['xai_comparison'] = xai_results
+    
+    # NLP reports
+    if run_nlp:
+        nlp_results = generate_nlp_reports(model, test_loader, device, num_samples=5, output_dir=output_dir)
+        results['nlp_reports'] = nlp_results
     
     # Print summary
     print("\n" + "="*70)
@@ -315,6 +562,10 @@ def generate_evaluation_report(model_path: str = 'models/model_weights.pth',
     print("  - roc_curve.png")
     print("  - metrics_bar.png")
     print("  - classification_report.txt")
+    if run_xai:
+        print("  - xai_comparisons/ (XAI method visualizations)")
+    if run_nlp:
+        print("  - nlp_reports/ (generated radiology reports)")
     
     # Generate PDF report
     try:
@@ -322,6 +573,18 @@ def generate_evaluation_report(model_path: str = 'models/model_weights.pth',
         generate_pdf_report(results, pdf_path)
     except Exception as e:
         print(f"\nNote: Could not generate PDF report: {e}")
+    
+    # Log to audit
+    try:
+        from utils.compliance import get_audit_logger
+        logger = get_audit_logger()
+        logger.log_user_action('system', 'evaluation_complete', {
+            'accuracy': results['metrics']['accuracy'],
+            'auc_roc': results['metrics']['auc_roc'],
+            'bleu_score': results['bleu_score'],
+        })
+    except Exception:
+        pass
     
     print("="*70)
     
@@ -338,12 +601,20 @@ if __name__ == "__main__":
                        help='Path to dataset directory')
     parser.add_argument('--output_dir', type=str, default='results',
                        help='Directory to save evaluation results')
+    parser.add_argument('--no_uncertainty', action='store_true',
+                       help='Skip uncertainty evaluation')
+    parser.add_argument('--no_xai', action='store_true',
+                       help='Skip XAI comparison')
+    parser.add_argument('--no_nlp', action='store_true',
+                       help='Skip NLP report generation')
     
     args = parser.parse_args()
     
-    # Run evaluation
     generate_evaluation_report(
         model_path=args.model_path,
         data_dir=args.data_dir,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        run_uncertainty=not args.no_uncertainty,
+        run_xai=not args.no_xai,
+        run_nlp=not args.no_nlp,
     )

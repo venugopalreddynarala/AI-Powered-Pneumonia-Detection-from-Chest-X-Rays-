@@ -1,0 +1,531 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage[utf8]{inputenc}
+\usepackage{textgreek}
+\usepackage{newunicodechar}
+\newunicodechar{−}{-}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+\title{AI-POWERED X-RAY VISUALIZATION AND DAMAGE DETECTION FOR PNEUMONIA\\
+{\footnotesize \textsuperscript{}}
+\thanks{...}
+}
+\author{\IEEEauthorblockN{ E.Chandralekha}
+\IEEEauthorblockA{\textit{Assistant Professor,CSE} \\
+\textit{Vel Tech Rangarajan}\\
+\textit{Dr.Sagunthala R\&D institute}\\
+\textit{of Science and Technology}\\
+,Avadi, Chennai, India \\
+clchandralekha08@gmail.com}
+\and
+\IEEEauthorblockN{ K.Nanda Kishore Reddy}
+\IEEEauthorblockA{\textit{Department of CSE(AIDS)} \\
+\textit{Vel Tech Rangarajan}\\
+\textit{Dr.Sagunthala R\&D institute}\\
+\textit{of Science and Technology}\\
+Avadi, Chennai, India \\
+vtu21896@veltech.edu.in}
+\and
+\IEEEauthorblockN{N.Venu Gopal Reddy  }
+\IEEEauthorblockA{\textit{Department of CSE(AIDS)} \\
+\textit{Vel Tech Rangarajan}\\
+\textit{Dr.Sagunthala R\&D institute}\\
+\textit{of Science and Technology}\\
+Avadi, Chennai, India \\
+vtu21798@veltech.edu.in}
+}
+\maketitle
+
+%====================================================================
+%  ABSTRACT
+%====================================================================
+\begin{abstract}
+Pneumonia remains a leading cause of respiratory morbidity and mortality, with disproportionate impact on paediatric and elderly populations. Chest radiography serves as the predominant initial screening modality; however, manual interpretation is hampered by inter-observer variability, with published discordance rates of 70--85\% among trained radiologists. Deep learning classifiers for chest X-rays typically lack spatial explanations and provide no severity estimate, constraining their adoption in clinical practice. The diagnostic pipeline described here pairs a transfer-learned DenseNet121 backbone with multi-layered interpretability: Grad-CAM-derived two-dimensional attention heatmaps localise suspect pulmonary regions, while a parametric three-dimensional lung surface, colour-coded by activation intensity, conveys spatial extent. A heuristic severity grade---normal, mild, moderate, or severe---is derived from the coverage and peak magnitude of Grad-CAM activations; critically, this grade is algorithmically inferred rather than validated against radiologist annotations. A browser-based interface consolidates classification output, heatmaps, the three-dimensional rendering, and the severity grade for point-of-care review. Evaluated on the held-out test partition of the Kaggle Chest X-Ray Pneumonia corpus (624 images; 5,863 total), the system records 85.26\% accuracy, 87.25\% weighted precision, 85.26\% weighted recall, 84.39\% weighted F1-score, and an AUC-ROC of 0.96. These results, combined with layered spatial explanations, position the framework as a supplementary screening aid intended to support---not replace---expert radiographic judgement.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Deep Learning, Explainable AI, Grad-CAM, 3D Visualization, Pneumonia Detection, Chest X-Ray, DenseNet121, Medical Imaging
+\end{IEEEkeywords}
+
+%====================================================================
+%  I.  INTRODUCTION
+%====================================================================
+\section{Introduction}
+
+\noindent\hspace{0.5cm}Pneumonia ranks among the foremost causes of respiratory mortality across all age groups. Epidemiological data indicate that the infection accounts for roughly 15\% of deaths in children under five years of age, translating to an estimated 2.5 million paediatric fatalities per annum. Early detection enables timely therapeutic intervention and materially improves patient prognosis, making rapid and reliable diagnostic instruments a clinical priority.
+
+Frontal chest radiography is the dominant initial screening modality owing to its low cost, widespread availability, and comparatively modest radiation dose. Interpretation, however, is inherently subjective: inter-reader concordance studies report agreement rates between 70\% and 85\% among experienced radiologists. The two-dimensional, often subtle presentation of pulmonary opacities further complicates assessment, sustaining demand for computer-aided diagnosis (CAD) solutions capable of complementing clinical expertise.
+
+Convolutional neural network (CNN) architectures---including DenseNet, ResNet, and VGG variants---have demonstrated encouraging classification accuracy on chest radiograph benchmarks over the past several years. Nevertheless, the majority of deployed systems remain opaque: they emit a diagnostic label without indicating which anatomical regions drove the decision and without estimating disease severity. This opacity limits clinician confidence and practical utility, particularly in resource-constrained settings where specialist radiologist access is restricted.
+
+The work reported here addresses these gaps through an integrated pipeline for frontal chest X-ray-based pneumonia identification. A DenseNet121 classifier, fine-tuned via transfer learning, performs binary prediction. Interpretability is delivered through two complementary channels: (i) Grad-CAM activation mapping, which generates a two-dimensional heatmap of diagnostically salient regions, and (ii) projection of these activations onto a parametric three-dimensional lung surface to convey spatial context. A heuristic severity grading module categorises findings by estimating the spatial coverage and intensity of the activations. All outputs are accessible through a deployment-ready web interface designed for point-of-care integration.
+
+%------------------------------------------------------------
+\subsection{Main Contributions}
+The principal contributions of this work are enumerated below. They are framed as engineering and integration achievements rather than as novel algorithmic contributions.
+\begin{itemize}
+    \item Integration of a transfer-learned DenseNet121 classifier with Grad-CAM-based explainability into a single end-to-end pipeline for binary pneumonia classification on frontal chest radiographs.
+    \item Generation of two-dimensional Grad-CAM attention heatmaps that spatially localise the regions contributing to each prediction, providing transparent visual evidence for clinical review.
+    \item Projection of Grad-CAM activation intensities onto a parametric three-dimensional lung surface, offering an approximate spatial perspective on the distribution and extent of suspected pathology.
+    \item A heuristic severity estimation module that derives mild, moderate, or severe grades from the spatial coverage and peak intensity of activation maps, serving as an approximate indicator pending clinical validation.
+    \item A browser-based web interface that consolidates classification output, attention heatmaps, the three-dimensional lung rendering, and the severity grade into a single point-of-care display.
+\end{itemize}
+Together, these elements constitute an interpretable clinical decision-support framework designed to augment---not replace---expert radiographic interpretation.
+
+%====================================================================
+%  II.  LITERATURE REVIEW
+%====================================================================
+\section{Literature Review}
+
+\noindent\hspace{0.5cm}Automated radiographic analysis of pulmonary conditions has attracted escalating research attention, driven by the clinical imperative for rapid and reproducible image interpretation. The following review organises relevant prior work into three thematic categories: CNN-based classification of chest radiographs, explainable artificial intelligence (XAI) methods applied to medical imaging, and three-dimensional visualisation techniques for thoracic analysis.
+
+%------------------------------------------------------------
+\subsection{CNN-Based Classification of Chest Radiographs}
+
+Deep convolutional architectures have become the dominant paradigm for automated thoracic radiograph analysis. The DenseNet family, introduced by Huang et al.\ [11], propagates features across all preceding layers within each dense block, promoting gradient stability and yielding compact learned representations. Building on this design, Rajpurkar et al.\ [1] trained a DenseNet-121 backbone (CheXNet) on a large frontal radiograph corpus and reported diagnostic performance competitive with practising radiologists for pneumonia detection. Residual networks tackle depth-related gradient degradation through skip connections: Liang and Zheng [3] demonstrated that initialising a deep residual network with ImageNet-derived weights substantially reduced convergence time for paediatric pneumonia classification while maintaining competitive accuracy, confirming the viability of knowledge transfer in data-scarce medical domains. VGG-16, despite its comparatively straightforward stacked-convolution topology, extracts hierarchically organised spatial and textural descriptors; Sharma et al.\ [5] augmented this backbone with supplementary fully connected layers and showed improved spatial feature extraction for pneumonia identification.
+
+Computational efficiency has been pursued alongside accuracy. Stephen et al.\ [4] constructed a streamlined convolutional pipeline capable of near-instantaneous pneumonia classification suited to time-sensitive clinical workflows. Ye et al.\ [15] confirmed that pretrained CNNs repurposed for chest radiograph analysis achieve rapid convergence without sacrificing discriminative accuracy. Kermany et al.\ [2] validated image-based deep learning across multiple clinical datasets---including pneumonia---and demonstrated that learned representations generalise beyond controlled experimental conditions into authentic healthcare environments.
+
+Large-scale annotated corpora have been pivotal in advancing this field. ChestX-ray8, released by Wang et al.\ [8], comprises over 100,000 annotated frontal radiographs spanning eight thoracic pathologies and has served as a standard benchmark for weakly supervised classification. CheXpert, assembled by Irvin et al.\ [12], introduced uncertainty labels alongside expert annotations for fourteen findings, showing that explicit modelling of label ambiguity improves downstream classification performance. The publicly available collection released by Kermany and Goldbaum [10] has become a widely adopted training and evaluation resource. Extending CNN-based analysis to other thoracic conditions, Lakhani and Sundaram [13] demonstrated that deep architectures surpass conventional hand-crafted feature pipelines for pulmonary tuberculosis screening, establishing broader precedent for CNN-based thoracic disease detection.
+
+A persistent gap across these classification studies is the limited attention given to \emph{why} a model arrives at a particular prediction. High accuracy alone does not satisfy clinical adoption requirements if the reasoning process remains inaccessible to the treating physician.
+
+%------------------------------------------------------------
+\subsection{Explainable AI for Medical Image Interpretation}
+
+Clinician adoption of automated diagnostic tools hinges on the transparency of model decisions. Gradient-weighted Class Activation Mapping (Grad-CAM), formalised by Selvaraju et al.\ [6], computes channel-wise importance weights from the gradients of the target class score to produce a coarse spatial heatmap of influential image regions. Applied to chest radiography, this technique exposes probable sites of infection, lending spatial transparency to otherwise opaque network reasoning.
+
+The earlier Class Activation Mapping (CAM) framework of Zhou et al.\ [14] enabled weakly supervised object localisation without bounding-box annotations, laying the groundwork for subsequent interpretability methods in medical image analysis. Guan and Huang [7] extended this direction with a category-wise residual attention module for multi-label chest radiograph classification, directing network focus toward disease-relevant pixel neighbourhoods and jointly improving accuracy and spatial explanation quality.
+
+A limitation common to these approaches is that the resulting heatmaps are inherently two-dimensional: they overlay attention weights on the planar radiograph without conveying spatial depth or volumetric extent. Clinicians interpreting such overlays receive no guidance on the three-dimensional location of suspected pathology within the lung parenchyma.
+
+%------------------------------------------------------------
+\subsection{Three-Dimensional Medical Visualisation}
+
+Efforts to reconstruct volumetric pulmonary anatomy from limited radiographic views remain an active research area. Chen et al.\ [9] employed deep generative models to infer three-dimensional lung structure from single-view two-dimensional radiographs, a direction closely aligned with the aspiration to convey spatial context from chest X-ray analysis. However, anatomically accurate volumetric reconstruction from a single projection remains an open challenge.
+
+The present work adopts a lighter-weight alternative: rather than reconstructing patient-specific anatomy, Grad-CAM activations are mapped onto a parametric lung surface template to provide approximate spatial cues. This strategy deliberately trades anatomical fidelity for deployment simplicity and computational efficiency, offering clinicians an intuitive three-dimensional impression of where the classifier concentrates its attention.
+
+Despite substantial advances in classification and interpretability, few existing frameworks simultaneously deliver binary classification, spatial attention mapping, three-dimensional activation visualisation, and severity estimation within a single deployable pipeline. The system described in the following sections addresses this unmet integration requirement.
+
+%====================================================================
+%  III.  METHODOLOGY
+%====================================================================
+\section{Methodology}
+
+\noindent\hspace{0.5cm}The following subsections detail each stage of the pneumonia detection pipeline, spanning raw image ingestion through interpretable clinical output. The overall workflow---depicted in Fig.~1---encompasses data preparation, model training, inference, visual explanation, and severity estimation.
+
+%------------------------------------------------------------
+\subsection{Dataset Description}
+The radiograph collection used in this study originates from the Kaggle Chest X-Ray Pneumonia repository, a publicly available corpus of clinically annotated anterior-posterior chest views divided into two categories: Normal and Pneumonia. The Normal subset comprises radiographs exhibiting no discernible pulmonary abnormality, whereas the Pneumonia subset spans paediatric and adult cases with confirmed bacterial or viral aetiology. Annotations were cross-referenced with established clinical records to ensure label reliability.
+
+In total, the dataset comprises 5,863 images---1,583 labelled Normal and 4,280 labelled Pneumonia. The collection follows the Kaggle repository's default partitioning scheme: a training set containing the majority of images (approximately 89\%), a validation set of 16 images (8 per class), and a held-out test set of 624 images (234 Normal, 390 Pneumonia). The pronounced class imbalance---pneumonia cases outnumber normal cases by roughly 2.7:1---and the extremely small validation partition are notable limitations of this corpus. Validation-phase metrics therefore exhibit high variance; a single misclassification shifts reported validation accuracy by 6.25 percentage points. Consequently, the held-out test set constitutes the authoritative evaluation benchmark throughout this paper.
+
+All images were uniformly resized to 224\texttimes224 pixels and converted to three-channel RGB format to satisfy the input requirements of the pretrained convolutional backbone. Additional limitations include the absence of graded severity annotations (only binary labels are provided), the concentration of images from a single institutional source, and the lack of demographic metadata such as patient age, sex, or comorbidities. These constraints bound the generalisability of models trained solely on this corpus and motivate future evaluation on independently collected, multi-institutional datasets.
+
+%------------------------------------------------------------
+\subsection{Preprocessing}
+Several preprocessing operations were applied before model training to promote convergence and strengthen generalisation.
+
+\subsubsection{Normalisation}
+Pixel intensity values were linearly rescaled to the unit interval:
+\begin{equation}
+I_{norm} = \frac{I - I_{min}}{I_{max} - I_{min}}
+\end{equation}
+where \( I \) denotes the original pixel intensity. This rescaling mitigates intensity variations introduced by heterogeneous acquisition conditions and stabilises gradient magnitudes during back-propagation.
+
+\subsubsection{Data Augmentation}
+Stochastic augmentation was applied exclusively to the training partition to reduce overfitting and improve invariance to presentation variations:
+\begin{itemize}
+    \item Random horizontal flipping
+    \item Random rotation within $\pm10$ degrees
+    \item Minor contrast adjustment
+    \item Small-scale zoom perturbation
+\end{itemize}
+
+\subsubsection{Batch Construction}
+Training images were grouped into mini-batches of 32 samples per iteration, balancing GPU memory utilisation against gradient estimate stability throughout optimisation.
+
+\vspace{0.5cm}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1.0\linewidth]{xray architecture.png}
+    \caption{Architecture Overview}
+    \label{fig:enter-label}
+\end{figure}
+
+%------------------------------------------------------------
+\subsection{Model Architecture}
+
+\subsubsection{DenseNet121 Classifier}
+DenseNet121 was selected as the classification backbone owing to its dense inter-layer connectivity, which fosters extensive feature reuse and maintains robust gradient flow across the network's depth. In each dense block, every layer receives concatenated feature maps from all preceding layers, yielding compact yet expressive representations well-suited to fine-grained medical image discrimination.
+
+The pretrained ImageNet classification head was removed and replaced with a task-specific head consisting of:
+\begin{itemize}
+    \item Global Average Pooling layer
+    \item Fully connected layer with 512 neurons and ReLU activation
+    \item Dropout layer with a 0.3 rate
+    \item Final dense layer with Softmax activation for binary classification
+\end{itemize}
+
+Fig.~2 illustrates the adapted DenseNet121 topology, highlighting the modified terminal layers and the fine-tuning strategy.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.95\linewidth]{dense net 121.png}
+    \caption{Customized DenseNet121 architecture for pneumonia classification}
+    \label{fig:densenet}
+\end{figure}
+
+\begin{table}[h]
+    \centering
+    \caption{Model Evaluation Metrics for DenseNet121}
+    \label{tab:model_comparison_pneumonia}
+    \begin{tabular}{|l|c|c|c|c|c|}
+    \hline
+    \textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Support} \\
+    \hline
+    \textbf{Normal} & 0.97 & 0.63 & 0.76 & 234 \\
+    \hline
+    \textbf{Pneumonia} & 0.82 & 0.99 & 0.89 & 390 \\
+    \hline
+    \textbf{Macro Avg} & 0.89 & 0.81 & 0.83 & 624 \\
+    \hline
+    \textbf{Weighted Avg} & 0.87 & 0.85 & 0.84 & 624 \\
+    \hline
+    \end{tabular}
+\end{table}
+
+Table~I summarises the per-class and aggregated precision, recall, and F1-score obtained by the DenseNet121 classifier on the held-out test partition.
+
+%------------------------------------------------------------
+\subsubsection{Grad-CAM Based Explainability}
+
+Gradient-weighted Class Activation Mapping (Grad-CAM) was incorporated into the inference pipeline to expose the spatial reasoning underlying each classification decision. The technique operates as follows: for a given input radiograph and target class $c$, the gradient of the class score $y^c$ with respect to each feature map $A^k$ in the final convolutional layer is computed via back-propagation. These gradients are globally averaged across spatial dimensions to yield a per-channel importance weight:
+\begin{equation}
+\alpha_k^c = \frac{1}{Z} \sum_{i}\sum_{j} \frac{\partial y^c}{\partial A_{ij}^k}
+\end{equation}
+
+The weighted combination of feature maps, passed through a ReLU to retain only positive contributions, produces the Grad-CAM heatmap:
+\begin{equation}
+L_{GradCAM}^c = \text{ReLU}\left(\sum_k \alpha_k^c A^k\right)
+\end{equation}
+
+The resulting coarse heatmap is upsampled to the input image resolution and overlaid on the original radiograph using a continuous colour gradient from blue (low activation) through green and yellow to red (high activation). Warmer colours delineate lung sub-regions that exerted the strongest influence on the predicted class---typically areas of suspected infiltrate or consolidation in pneumonia-positive cases. This overlay enables clinicians to verify whether the model's attention aligns with radiographically recognisable pathological patterns, thereby lending spatial transparency to the classification output.
+
+%------------------------------------------------------------
+\subsubsection{Three-Dimensional Lung Surface Visualisation}
+
+To supplement the planar heatmap with spatial depth cues, Grad-CAM activation intensities are projected onto a parametric three-dimensional lung surface rendered using Plotly. The parametric surface is constructed from an ellipsoidal template that approximates the gross morphology of the left and right lungs. Activation magnitudes from the two-dimensional Grad-CAM map are sampled at corresponding surface coordinates and encoded as vertex colours using the same blue-to-red colour scale employed in the 2D heatmap. Regions of elevated activation appear as warmer-coloured patches on the three-dimensional model, providing an intuitive spatial impression of where the classifier concentrates its attention.
+
+It is essential to emphasise that this rendering does \emph{not} reconstruct patient-specific volumetric anatomy. The surface is a generic parametric template, and the colour-coded activations represent a projection of two-dimensional attention weights rather than a true tomographic measurement. The visualisation therefore serves as an approximate spatial aid for clinical interpretation and should not be interpreted as an anatomically faithful reconstruction.
+
+%------------------------------------------------------------
+\subsection{Heuristic Severity Estimation}
+Drawing on both the 2D heatmap and the 3D projection, the pipeline assigns a severity estimate---normal, mild, moderate, or severe---to each classified radiograph. This grade is derived from two activation statistics: (i) the fraction of the lung field in which Grad-CAM activation exceeds a predefined threshold (spatial coverage) and (ii) the peak activation intensity within the heatmap. Higher coverage and intensity yield a more severe grade.
+
+A critical clarification is warranted. The Kaggle Chest X-Ray Pneumonia dataset provides \emph{exclusively} binary labels---Normal versus Pneumonia---and contains no ground-truth severity annotations. The assigned severity levels are therefore algorithmic approximations inferred from model activation patterns, not clinically validated stages. While the heuristic may correlate with disease extent when activation patterns align with genuine pathology, it has not been externally validated against radiologist-graded severity scales. Users should treat the severity output as a supplementary screening indicator and should not base treatment decisions solely upon it without independent clinical assessment.
+
+%------------------------------------------------------------
+\subsection{Training Configuration}
+Model training was conducted within the PyTorch framework. The Adam optimiser was employed owing to its adaptive per-parameter learning rates, which generally accelerate convergence on heterogeneous loss surfaces. The parameter update rule follows Adam's canonical formulation:
+\begin{equation}
+\theta_{t+1} = \theta_t - \eta \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}
+\end{equation}
+where \( \eta \) denotes the learning rate, and \( \hat{m}_t \) and \( \hat{v}_t \) are bias-corrected first and second moment estimates, respectively.
+
+The categorical cross-entropy loss function guided optimisation:
+\begin{equation}
+\mathcal{L} = -\sum_{i=1}^{C} y_i \log(\hat{y}_i)
+\end{equation}
+
+Overfitting was counteracted through a combination of early stopping---which halts training when validation loss ceases to decrease over consecutive epochs---and ReduceLROnPlateau scheduling, which dynamically reduces the learning rate upon detection of a performance plateau.
+
+%====================================================================
+%  IV.  RESULTS AND DISCUSSION
+%====================================================================
+\section{Results and Discussion}
+
+The complete pipeline was evaluated on frontal chest radiographs spanning both healthy and pneumonia-positive subjects. DenseNet121 served as the classification backbone, complemented by Grad-CAM attention maps and three-dimensional lung surface projections to deliver interpretable diagnostic output. The available data were allocated with approximately 80\% for training and 10\% each for validation and testing.
+
+%------------------------------------------------------------
+\subsection{Classification Performance}
+Classifier performance was assessed through standard metrics: accuracy, precision, recall, and F1-score. Each metric captures a distinct facet of diagnostic quality, and their joint consideration is essential in clinical settings where missed detections and false alarms entail different patient-safety consequences.
+
+\subsubsection{Accuracy}
+\begin{equation}
+\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}
+\end{equation}
+
+\subsubsection{Precision}
+\begin{equation}
+\text{Precision} = \frac{TP}{TP + FP}
+\end{equation}
+
+\subsubsection{Recall}
+\begin{equation}
+\text{Recall} = \frac{TP}{TP + FN}
+\end{equation}
+
+\subsubsection{F1-Score}
+\begin{equation}
+\text{F1-Score} = \frac{2 \times \text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}
+\end{equation}
+
+On the held-out 624-image test set, the fine-tuned DenseNet121 attained an overall classification accuracy of 85.26\%. The architecture's dense inter-layer connectivity facilitated multi-scale feature propagation, contributing to stable and discriminative learned representations. Grad-CAM overlays supplied spatially grounded evidence of the model's focus on pneumonia-affected parenchyma, reinforcing interpretability alongside quantitative performance.
+
+%------------------------------------------------------------
+\subsection{Per-Class Performance Analysis}
+Examination of class-level metrics reveals an asymmetric sensitivity profile shaped by the dataset's inherent class imbalance.
+
+For the \textbf{Pneumonia class}, precision was 81.57\%---that is, among all images predicted as pneumonia, 81.57\% were genuinely positive---while recall reached 98.72\%, indicating that the classifier captured nearly all true pneumonia cases. The resulting pneumonia-class F1-score of 89.33\% reflects a reasonable trade-off between detection sensitivity and positive predictive value.
+
+For the \textbf{Normal class}, precision was substantially higher at 96.71\%, yet recall (specificity) dropped to 62.82\%. This asymmetry indicates a detection-oriented bias: the model preferentially flagged ambiguous cases as positive, at the expense of misclassifying a proportion of healthy radiographs as pneumonia.
+
+In screening applications, elevated pneumonia recall is operationally desirable because the consequence of a missed infection---delayed treatment---is generally more severe than the consequence of a false alarm---an unnecessary follow-up examination. The 98.72\% pneumonia recall thus aligns with the priorities typical of population-level screening programmes. However, the 62.82\% normal-class recall implies a non-trivial false-positive rate that could burden downstream clinical resources if the system were deployed without supplementary triage mechanisms.
+
+Aggregated across both classes, the weighted precision was 87.25\% and the weighted F1-score 84.39\%. The area under the receiver operating characteristic curve (AUC-ROC) reached 95.77\%, evidencing robust separability between the two diagnostic categories.
+
+%------------------------------------------------------------
+\subsection{Training Convergence}
+
+The epoch-wise training and validation accuracy values are compiled in Table~II. The network exhibited rapid learning across all 20 training epochs: training accuracy rose from 95.11\% at epoch 1 to 99.54\% by epoch 20, confirming progressive acquisition of diagnostically relevant features.
+
+\begin{table}[h]
+\centering
+\caption{Training and Validation Accuracy}
+\label{tab:epoch_accuracy}
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Epoch} & \textbf{Train Accuracy (\%)} & \textbf{Validation Accuracy (\%)} \\ \hline
+1  & 95.11 & 100.00 \\ \hline
+2  & 97.18 & 87.50 \\ \hline
+3  & 97.55 & 93.75 \\ \hline
+4  & 97.97 & 75.00 \\ \hline
+5  & 98.10 & 100.00 \\ \hline
+6  & 98.58 & 100.00 \\ \hline
+7  & 98.70 & 87.50 \\ \hline
+8  & 98.95 & 100.00 \\ \hline
+9  & 98.87 & 100.00 \\ \hline
+10 & 98.85 & 100.00 \\ \hline
+11 & 99.08 & 100.00 \\ \hline
+12 & 99.29 & 93.75 \\ \hline
+13 & 99.52 & 81.25 \\ \hline
+14 & 99.19 & 100.00 \\ \hline
+15 & 99.25 & 100.00 \\ \hline
+16 & 99.42 & 100.00 \\ \hline
+17 & 99.58 & 100.00 \\ \hline
+18 & 99.58 & 100.00 \\ \hline
+19 & 99.48 & 100.00 \\ \hline
+20 & 99.54 & 100.00 \\ \hline
+\end{tabular}
+\end{table}
+
+Validation accuracy oscillated between 75\% and 100\%; however, since the validation partition holds only 16 images (8 per class), a single misclassification shifts the reported figure by 6.25 percentage points, rendering epoch-level validation accuracy statistically volatile. The 624-image held-out test set provides the definitive performance reference.
+
+Training loss declined from 0.1373 at epoch 1 to 0.0108 by epoch 20, with validation loss remaining comparably low, indicating effective error minimisation without divergent overfitting. Regularisation measures---data augmentation, dropout, adaptive learning rate reduction, and early stopping---collectively guarded against memorisation of the training samples.
+
+From a clinical perspective, these observations suggest that the system offers credible discrimination between normal and pneumonia-affected radiographs. The elevated pneumonia recall of 98.72\% reflects a detection-oriented operating point advantageous in screening scenarios where overlooking a positive case carries greater risk than generating a false alarm. Definitive generalisation claims, however, would benefit from repeated evaluation on larger, independently assembled validation cohorts.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{model performance evaluation.png}
+    \caption{Model Performance Metrics}
+    \label{fig:model_perf}
+\end{figure}
+
+Fig.~3 presents a consolidated bar-chart comparison of accuracy, precision, recall, and F1-score.
+
+%------------------------------------------------------------
+\subsection{Evaluation Summary}
+
+Table~III consolidates the headline evaluation metrics on the held-out test partition.
+
+\begin{table}[h]
+\centering
+\caption{Overall Evaluation Summary on Held-Out Test Set}
+\label{tab:eval_summary}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Metric} & \textbf{Value} \\ \hline
+Accuracy & 85.26\% \\ \hline
+Weighted Precision & 87.25\% \\ \hline
+Weighted Recall & 85.26\% \\ \hline
+Weighted F1-Score & 84.39\% \\ \hline
+AUC-ROC & 0.9577 \\ \hline
+\end{tabular}
+\end{table}
+
+%------------------------------------------------------------
+\subsection{ROC Curve Analysis}
+
+The model's discriminative capacity was further examined through receiver operating characteristic analysis. The plotted curve lies well above the chance diagonal, confirming markedly superior performance relative to random assignment. An AUC of 95.77\% indicates strong overall class separability, with the true-positive rate remaining elevated even as the false-positive rate increases.
+
+This characteristic carries practical significance: different clinical environments---ranging from population-level screening programmes to time-critical emergency triage---may favour distinct operating points along the sensitivity--specificity continuum. The consistently high trajectory of the ROC curve across decision thresholds demonstrates that the classifier maintains reliable discrimination irrespective of the chosen probability cut-off, supporting deployment flexibility across diverse clinical settings.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{training_history (2).png}
+    \caption{ROC Curve Analysis}
+    \label{fig:roc_curve1}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.9\linewidth]{training_history (1).png}
+    \caption{ROC Curve Analysis}
+    \label{fig:roc_curve2}
+\end{figure}
+
+Fig.~4 and Fig.~5 depict the ROC curves, illustrating the trade-off between true-positive and false-positive rates at varying decision thresholds.
+
+%------------------------------------------------------------
+\subsection{Contextual Comparison with Alternative Architectures}
+
+Although head-to-head experiments with competing backbones on the identical data split were not conducted, a contextual discussion with respect to commonly used architectures is informative.
+
+\textbf{ResNet-50} employs residual skip connections that facilitate the training of deep networks by mitigating vanishing gradients. On comparable chest X-ray benchmarks, ResNet variants have reported competitive classification accuracy; however, their sparser layer-to-layer connectivity relative to DenseNet may reduce feature reuse efficiency in fine-grained medical imaging tasks.
+
+\textbf{VGG-16}, with its straightforward stacked-convolution design, has been widely applied to chest radiograph classification [5]. Its large parameter count, however, increases computational cost and memory consumption, which can be limiting under resource-constrained deployment conditions.
+
+\textbf{EfficientNet} scales network depth, width, and resolution simultaneously through compound scaling coefficients, frequently achieving high accuracy with fewer parameters. Its inverted-residual building blocks, however, require careful adaptation for standard Grad-CAM implementations, potentially complicating heatmap generation when compared with the simpler dense-block structure of DenseNet.
+
+DenseNet121 was selected for the present pipeline because its dense connectivity inherently supports extensive feature reuse and smooth gradient propagation---properties that are especially beneficial when transferring ImageNet-learned weights to the medical imaging domain. Additionally, the architecture interfaces cleanly with standard Grad-CAM routines, making it straightforward to generate interpretable attention maps alongside classification output. The reported 85.26\% test accuracy and 0.96 AUC-ROC fall within the range of published results for similar tasks. Definitive comparative claims, however, would require controlled experiments on a shared evaluation protocol---an avenue deferred to future work.
+
+%------------------------------------------------------------
+\subsection{Visualisation and Output}
+
+For every input radiograph, the system produces a Grad-CAM heatmap that encodes regional attention intensity, with warmer colours demarcating zones deemed most indicative of pathology. This spatially explicit overlay furnishes clinicians with directly interpretable evidence underlying each prediction.
+
+The pipeline additionally projects activation magnitudes onto the parametric three-dimensional lung surface, enabling rapid visual appraisal of both the spatial distribution and approximate severity of involvement. Because this rendering maps two-dimensional activations onto a generic anatomical template rather than reconstructing patient-specific morphology, it should be understood as a qualitative visualisation aid.
+
+The composite output delivered to the end user comprises the predicted class (Normal or Pneumonia), the associated confidence score, the Grad-CAM heatmap, the three-dimensional lung model annotated with activation intensities, and the heuristic severity grade---collectively delineating regions of clinical concern and providing layered explanations at varying levels of spatial abstraction.
+
+All figures presented in this paper are provided in high resolution suitable for publication.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\linewidth]{Grad-CAM Heatmap Analysis.jpg}
+    \caption{Grad-CAM Heatmap Analysis}
+    \label{fig:gradcam}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.7\linewidth]{lung output normal.png}
+    \caption{3D Visualization Normal Lungs}
+    \label{fig:3d_normal}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.6\linewidth]{lung output pnemonia.png}
+    \caption{3D Visualization Pneumonia Lungs}
+    \label{fig:3d_pneumonia}
+\end{figure}
+
+Fig.~6 shows the Grad-CAM heatmap highlighting pulmonary zones most contributory to the pneumonia prediction. Fig.~7 presents the 3D rendering for a normal case, exhibiting baseline activation patterns on a healthy radiograph. Fig.~8 displays the 3D rendering for a pneumonia-positive case, where elevated activation intensities map onto spatial regions corresponding to pathological involvement.
+
+%====================================================================
+%  V.  CONCLUSION
+%====================================================================
+\section{Conclusion}
+
+The diagnostic framework presented in this paper classifies frontal chest radiographs as Normal or Pneumonia using a fine-tuned DenseNet121 backbone, complemented by Grad-CAM attention heatmaps and a three-dimensional parametric lung surface projection. Systematic preprocessing, targeted regularisation, and rigorous held-out evaluation on 624 test images yielded 85.26\% accuracy, 87.25\% weighted precision, 85.26\% weighted recall, 84.39\% weighted F1-score, and an AUC-ROC of 0.96. The layered visual explanations---spanning a two-dimensional attention overlay, a three-dimensional surface rendering, and a heuristic severity grade---address interpretability constraints inherent to conventional opaque classifiers and render the system applicable to screening and teleradiology workflows. By consolidating classification, spatial explainability, and severity-oriented reporting within a single deployable web interface, the framework serves as a supplementary clinical decision-support tool for environments where rapid, transparent radiographic interpretation is needed.
+
+%====================================================================
+%  VI.  LIMITATIONS
+%====================================================================
+\section{Limitations}
+
+Several limitations of the current work warrant explicit acknowledgement.
+
+\textbf{Dataset bias.} The Kaggle Chest X-Ray Pneumonia dataset originates from a single institutional source, introducing potential demographic and acquisition-protocol bias that may restrict generalisability to other clinical populations and imaging equipment. The 2.7:1 class imbalance further conditions the model's decision boundary.
+
+\textbf{Absence of clinical validation.} No comparison with board-certified radiologist interpretations was conducted. While the classifier's quantitative metrics are encouraging, the lack of a formal reader study precludes non-inferiority claims.
+
+\textbf{Heuristic severity estimation.} The severity grading module applies thresholds to Grad-CAM activation statistics. Because the training corpus carries only binary labels, the severity output has not been validated against radiologist-annotated severity scales and should be treated as an approximate indicator rather than a clinical grade.
+
+\textbf{Simplified three-dimensional visualisation.} The 3D rendering projects two-dimensional activation maps onto a generic parametric lung surface. It does not reconstruct patient-specific volumetric anatomy and should not be equated with tomographic imaging.
+
+\textbf{Absence of architecture comparison.} No head-to-head evaluation with alternative backbones (e.g., ResNet-50, VGG-16, EfficientNet) was performed on the identical data split, limiting the ability to contextualise DenseNet121's relative standing.
+
+\textbf{Small validation partition.} The 16-image validation split renders epoch-level validation metrics statistically unreliable, although this does not affect the held-out test evaluation.
+
+%====================================================================
+%  VII.  FUTURE WORK
+%====================================================================
+\section{Future Work}
+
+Several directions for subsequent investigation emerge from the present findings.
+
+\begin{itemize}
+    \item \textbf{Clinical dataset validation:} Evaluation on multi-institutional, radiologist-annotated corpora would strengthen generalisability claims and enable formal comparison with expert human performance.
+    \item \textbf{Radiologist comparison:} A structured reader study, in which the model's predictions are benchmarked against board-certified radiologist annotations, would quantify clinical non-inferiority.
+    \item \textbf{Multi-disease thoracic screening:} Extension to additional pulmonary pathologies---including tuberculosis, lung nodules, and pleural effusion---alongside controlled benchmarking against ResNet-50, VGG-16, and EfficientNet variants would broaden clinical applicability and contextualise architectural trade-offs.
+    \item \textbf{Hospital PACS integration:} DICOM-compliant interfaces would embed the tool within established Picture Archiving and Communication Systems, facilitating seamless clinical workflow adoption.
+    \item \textbf{Improved 3D reconstruction:} Leveraging patient-specific volumetric data when available could replace the current parametric surface with anatomically faithful three-dimensional representations.
+    \item \textbf{Additional enhancements:} Incorporation of patient metadata for contextualised risk stratification, uncertainty quantification for flagging low-confidence predictions, edge-device optimisation for real-time inference, and longitudinal monitoring of disease progression through serial radiograph comparison represent further avenues for increasing clinical utility.
+\end{itemize}
+
+%====================================================================
+%  REFERENCES
+%====================================================================
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{99}
+
+\bibitem{rajpurkar2017}
+P.~Rajpurkar \textit{et al.}, ``CheXNet: Radiologist-Level Pneumonia Detection on Chest X-Rays with Deep Learning,'' \emph{arXiv preprint arXiv:1711.05225}, 2017.
+
+\bibitem{kermany2018}
+D.~S.~Kermany \textit{et al.}, ``Identifying Medical Diagnoses and Treatable Diseases by Image-Based Deep Learning,'' \emph{Cell}, vol.~172, no.~5, pp.~1122--1131, Feb.\ 2018.
+
+\bibitem{liang2020}
+G.~Liang and L.~Zheng, ``A Transfer Learning Method with Deep Residual Network for Pediatric Pneumonia Diagnosis,'' \emph{Computer Methods and Programs in Biomedicine}, vol.~187, p.~104964, Apr.\ 2020.
+
+\bibitem{stephen2019}
+O.~Stephen, M.~Sain, U.~J.~Maduh, and D.~U.~Jeong, ``An Efficient Deep Learning Approach to Pneumonia Classification in Healthcare,'' \emph{Journal of Healthcare Engineering}, vol.~2019, Article ID 4180949, 2019.
+
+\bibitem{sharma2021}
+S.~Sharma, K.~Guleria, S.~Tiwari, and S.~Kumar, ``A Deep Learning Based Model for the Detection of Pneumonia from Chest X-Ray Images Using VGG-16 and Neural Networks,'' \emph{Procedia Computer Science}, vol.~218, pp.~357--366, 2021.
+
+\bibitem{selvaraju2017}
+R.~R.~Selvaraju, M.~Cogswell, A.~Das, R.~Vedantam, D.~Parikh, and D.~Batra, ``Grad-CAM: Visual Explanations from Deep Networks via Gradient-Based Localization,'' in \emph{Proc.\ IEEE International Conference on Computer Vision (ICCV)}, Venice, Italy, Oct.\ 2017, pp.~618--626.
+
+\bibitem{guan2018}
+Q.~Guan and Y.~Huang, ``Multi-Label Chest X-Ray Image Classification via Category-Wise Residual Attention Learning,'' \emph{Pattern Recognition Letters}, vol.~130, pp.~259--266, Feb.\ 2020.
+
+\bibitem{wang2020}
+X.~Wang \textit{et al.}, ``ChestX-Ray8: Hospital-Scale Chest X-Ray Database and Benchmarks on Weakly-Supervised Classification and Localization of Common Thorax Diseases,'' in \emph{Proc.\ IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, Honolulu, HI, USA, Jul.\ 2017, pp.~2097--2106.
+
+\bibitem{chen2022}
+H.~Chen, Y.~Zhao, L.~Zhang, and W.~Wang, ``3D Lung Reconstruction from Chest X-Ray Using Deep Learning,'' \emph{Medical Image Analysis}, vol.~78, p.~102401, May 2022.
+
+\bibitem{kermany2018dataset}
+D.~S.~Kermany and M.~Goldbaum, ``Labeled Optical Coherence Tomography (OCT) and Chest X-Ray Images for Classification,'' \emph{Mendeley Data}, v2, 2018. [Online]. Available: http://dx.doi.org/10.17632/rscbjbr9sj.2
+
+\bibitem{huang2017}
+G.~Huang, Z.~Liu, L.~Van der Maaten, and K.~Q.~Weinberger, ``Densely Connected Convolutional Networks,'' in \emph{Proc.\ IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, Honolulu, HI, USA, Jul.\ 2017, pp.~4700--4708.
+
+\bibitem{irvin2019}
+J.~Irvin \textit{et al.}, ``CheXpert: A Large Chest Radiograph Dataset with Uncertainty Labels and Expert Comparison,'' in \emph{Proc.\ AAAI Conference on Artificial Intelligence}, Honolulu, HI, USA, Jan.\ 2019, pp.~590--597.
+
+\bibitem{lakhani2017}
+P.~Lakhani and B.~Sundaram, ``Deep Learning at Chest Radiography: Automated Classification of Pulmonary Tuberculosis by Using Convolutional Neural Networks,'' \emph{Radiology}, vol.~284, no.~2, pp.~574--582, Aug.\ 2017.
+
+\bibitem{zhou2016}
+B.~Zhou, A.~Khosla, A.~Lapedriza, A.~Oliva, and A.~Torralba, ``Learning Deep Features for Discriminative Localization,'' in \emph{Proc.\ IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, Las Vegas, NV, USA, Jun.\ 2016, pp.~2921--2929.
+
+\bibitem{ye2020}
+J.~Ye, T.~Cheng, Z.~Yi, and Z.~Zhang, ``Pneumonia Detection and Classification Based on Transfer Learning in X-Ray Images,'' \emph{Frontiers in Public Health}, vol.~8, p.~146, Apr.\ 2020.
+
+\end{thebibliography}
+
+\end{document}

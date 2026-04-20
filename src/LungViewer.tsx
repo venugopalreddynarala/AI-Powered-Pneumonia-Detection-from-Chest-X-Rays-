@@ -27,11 +27,13 @@ function createLungShaderMaterial(params: {
       varying vec3 vWorldPos;
       varying vec3 vNormalW;
       varying vec2 vUv;
+      varying vec3 vViewDir;
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
         vWorldPos = worldPos.xyz;
         vNormalW = normalize(mat3(modelMatrix) * normal);
         vUv = uv;
+        vViewDir = normalize(cameraPosition - worldPos.xyz);
         gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
@@ -40,12 +42,14 @@ function createLungShaderMaterial(params: {
       varying vec3 vWorldPos;
       varying vec3 vNormalW;
       varying vec2 vUv;
+      varying vec3 vViewDir;
       uniform vec3 uBaseColor;
       uniform sampler2D uBaseMap;
       uniform float uHasMap;
       uniform float uSeverity;
       uniform float uTime;
 
+      /* ---- Hash & Noise ---- */
       float hash31(vec3 p) {
         p = fract(p * 0.1031);
         p += dot(p, p.yzx + 33.33);
@@ -56,42 +60,63 @@ function createLungShaderMaterial(params: {
         vec3 i = floor(p);
         vec3 f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
-
-        float n000 = hash31(i + vec3(0.0, 0.0, 0.0));
-        float n100 = hash31(i + vec3(1.0, 0.0, 0.0));
-        float n010 = hash31(i + vec3(0.0, 1.0, 0.0));
-        float n110 = hash31(i + vec3(1.0, 1.0, 0.0));
-        float n001 = hash31(i + vec3(0.0, 0.0, 1.0));
-        float n101 = hash31(i + vec3(1.0, 0.0, 1.0));
-        float n011 = hash31(i + vec3(0.0, 1.0, 1.0));
-        float n111 = hash31(i + vec3(1.0, 1.0, 1.0));
-
-        float nx00 = mix(n000, n100, f.x);
-        float nx10 = mix(n010, n110, f.x);
-        float nx01 = mix(n001, n101, f.x);
-        float nx11 = mix(n011, n111, f.x);
-
-        float nxy0 = mix(nx00, nx10, f.y);
-        float nxy1 = mix(nx01, nx11, f.y);
-
-        return mix(nxy0, nxy1, f.z);
+        float n000 = hash31(i);
+        float n100 = hash31(i + vec3(1,0,0));
+        float n010 = hash31(i + vec3(0,1,0));
+        float n110 = hash31(i + vec3(1,1,0));
+        float n001 = hash31(i + vec3(0,0,1));
+        float n101 = hash31(i + vec3(1,0,1));
+        float n011 = hash31(i + vec3(0,1,1));
+        float n111 = hash31(i + vec3(1,1,1));
+        return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y),
+                   mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
       }
 
-      float fbmLow(vec3 p) {
-        float v = 0.0;
-        float a = 0.55;
-        for (int i = 0; i < 3; i++) {
+      /* Multi-octave FBM for clustered organic patches */
+      float fbm(vec3 p) {
+        float v = 0.0, a = 0.5;
+        for (int i = 0; i < 5; i++) {
           v += a * noise3(p);
-          p *= 1.9;
-          a *= 0.55;
+          p *= 2.1;
+          a *= 0.48;
         }
         return v;
       }
 
-      vec3 severityColor(float s) {
-        if (s >= 0.7) return vec3(0.8980, 0.2235, 0.2078);
-        if (s >= 0.4) return vec3(1.0, 0.5961, 0.0);
-        return vec3(1.0, 0.8353, 0.3098);
+      /* Secondary detail noise for infection texture */
+      float detailNoise(vec3 p) {
+        return noise3(p * 3.5) * 0.5 + noise3(p * 7.0) * 0.25 + noise3(p * 14.0) * 0.125;
+      }
+
+      /* ---- Healthy tissue tint by severity level ---- */
+      vec3 healthyTint(float sev) {
+        // Low: cool blue-teal (healthy), Mild: muted green-blue,
+        // Moderate: pale amber, Severe: desaturated/stressed tissue
+        vec3 low      = vec3(0.55, 0.82, 0.88);  // teal
+        vec3 mild     = vec3(0.60, 0.78, 0.65);  // sage green
+        vec3 moderate = vec3(0.85, 0.75, 0.50);  // amber
+        vec3 severe   = vec3(0.68, 0.55, 0.55);  // stressed pink-gray
+
+        if (sev < 0.2)  return low;
+        if (sev < 0.4)  return mix(low, mild, (sev - 0.0) / 0.4);
+        if (sev < 0.7)  return mix(mild, moderate, (sev - 0.4) / 0.3);
+        return mix(moderate, severe, (sev - 0.7) / 0.3);
+      }
+
+      /* ---- Infection hot-spot color ---- */
+      vec3 infectionCore(float sev, float depth) {
+        // Core of infection: bright, high-saturation
+        vec3 mildInf     = vec3(1.0, 0.85, 0.2);   // warm yellow
+        vec3 moderateInf = vec3(1.0, 0.45, 0.1);   // hot orange
+        vec3 severeInf   = vec3(0.95, 0.15, 0.12);  // bright red
+
+        vec3 col;
+        if (sev < 0.4) col = mix(mildInf, moderateInf, sev / 0.4);
+        else           col = mix(moderateInf, severeInf, (sev - 0.4) / 0.6);
+
+        // Brighter at center, darker at edges of patches
+        col += depth * vec3(0.15, 0.08, 0.02);
+        return col;
       }
 
       void main() {
@@ -101,30 +126,84 @@ function createLungShaderMaterial(params: {
           baseCol *= texture2D(uBaseMap, vUv).rgb;
         }
 
-        vec3 lightDir = normalize(vec3(0.35, 0.85, 0.55));
-        float ndl = clamp(dot(normalize(vNormalW), lightDir), 0.0, 1.0);
-        float shade = 0.55 + 0.45 * ndl;
+        /* -- Lighting -- */
+        vec3 N = normalize(vNormalW);
+        vec3 V = normalize(vViewDir);
+        vec3 L = normalize(vec3(0.35, 0.85, 0.55));
+        float ndl = max(dot(N, L), 0.0);
+        float shade = 0.50 + 0.50 * ndl;
 
-        if (sev < 0.2) {
-          gl_FragColor = vec4(baseCol * shade, 1.0);
+        // Fresnel rim light for depth perception
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+
+        /* -- Healthy tissue base color by severity -- */
+        vec3 healthyCol = healthyTint(sev) * baseCol;
+        // Add subtle rim highlight on healthy areas
+        healthyCol += fresnel * 0.12 * vec3(0.6, 0.8, 1.0);
+
+        /* -- If very low severity, show mostly healthy -- */
+        if (sev < 0.05) {
+          gl_FragColor = vec4(healthyCol * shade, 1.0);
           return;
         }
 
-        vec3 infection = severityColor(sev);
+        /* -- Compute infection mask (clustered patches) -- */
+        float s = clamp(sev, 0.0, 1.0);
 
-        float s = clamp((sev - 0.2) / 0.8, 0.0, 1.0);
-        vec3 p = vWorldPos * 0.22 + vec3(0.0, 0.0, uTime * 0.025);
-        float n = fbmLow(p);
+        // Primary patch noise — slow drift for organic feel
+        vec3 noiseCoord = vWorldPos * 0.28 + vec3(0.0, 0.0, uTime * 0.012);
+        float n = fbm(noiseCoord);
 
-        float coverage = mix(0.86, 0.62, s);
-        float softness = mix(0.18, 0.22, s);
-        float mask = smoothstep(coverage, coverage + softness, n);
-        mask = pow(mask, 1.2);
-        mask *= (0.12 + 0.88 * s);
-        mask = min(mask, 0.85);
+        // Coverage grows with severity: tiny spots at low sev → large areas at high
+        float coverage = mix(0.82, 0.42, s);    // threshold lowers = more area
+        float edgeWidth = mix(0.06, 0.10, s);   // sharper edges than before
 
-        vec3 mixed = mix(baseCol, infection, mask);
-        gl_FragColor = vec4(mixed * shade, 1.0);
+        // Primary infection mask
+        float mask = smoothstep(coverage, coverage + edgeWidth, n);
+
+        // At low severity, reduce overall intensity so only hints appear
+        float intensityScale = smoothstep(0.0, 0.25, s);
+        mask *= intensityScale;
+
+        // Detail variation inside infected patches (texture/depth)
+        float detail = detailNoise(vWorldPos * 0.6 + uTime * 0.005);
+        float innerDepth = mask * detail;
+
+        /* -- Edge glow at infection boundaries -- */
+        float edgeMask = smoothstep(coverage - 0.03, coverage, n)
+                       - smoothstep(coverage, coverage + edgeWidth * 0.5, n);
+        edgeMask = max(edgeMask, 0.0) * intensityScale;
+
+        // Pulsing glow
+        float pulse = 0.8 + 0.2 * sin(uTime * 1.8 + n * 6.0);
+        edgeMask *= pulse;
+
+        /* -- Infection color with depth variation -- */
+        vec3 infColor = infectionCore(sev, innerDepth);
+
+        // Emissive boost inside infection (self-illuminated look)
+        float emissive = mask * mix(0.15, 0.45, s) * pulse;
+
+        /* -- Edge highlight (bright rim around infected patches) -- */
+        vec3 edgeGlow = vec3(1.0, 0.7, 0.2) * edgeMask * 1.5;
+        if (sev >= 0.7) edgeGlow = vec3(1.0, 0.3, 0.15) * edgeMask * 1.8;
+
+        /* -- Composite: blend healthy + infection -- */
+        vec3 finalColor = mix(healthyCol, infColor, mask);
+
+        // Apply lighting
+        finalColor *= shade;
+
+        // Add emissive glow to infected areas (not affected by shade)
+        finalColor += infColor * emissive;
+
+        // Add edge glow
+        finalColor += edgeGlow;
+
+        // Subtle fresnel on infected areas for dramatic effect
+        finalColor += fresnel * mask * 0.15 * infColor;
+
+        gl_FragColor = vec4(finalColor, 1.0);
       }
     `,
     transparent: false,
@@ -212,8 +291,9 @@ export default function LungViewer(props: {
       gl={{ antialias: true, alpha: false }}
       style={{ width: '100%', height: '100%', background: '#0b0b10' }}
     >
-      <ambientLight intensity={0.7} />
-      <directionalLight intensity={0.8} position={[2.5, 3.5, 4]} />
+      <ambientLight intensity={0.55} />
+      <directionalLight intensity={0.9} position={[2.5, 3.5, 4]} />
+      <directionalLight intensity={0.3} position={[-3, 1, -2]} color="#aaccff" />
       <OrbitControls enableDamping dampingFactor={0.08} />
       <LungModel
         url={'/public/models/lung_carcinoma.glb'}

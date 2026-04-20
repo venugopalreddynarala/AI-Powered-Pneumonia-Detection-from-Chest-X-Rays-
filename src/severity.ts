@@ -8,9 +8,9 @@ export function normalizeGradcamStat(stat: number, inMin = 0.0, inMax = 1.0): nu
   return clamp01((stat - inMin) / (inMax - inMin));
 }
 
-export function severityToColor(sev: number): { hex: string; label: string } {
-  if (sev >= 0.7) return { hex: '#e53935', label: 'Severe' };
-  if (sev >= 0.4) return { hex: '#ff9800', label: 'Moderate' };
-  if (sev >= 0.2) return { hex: '#ffd54f', label: 'Mild' };
-  return { hex: '#90caf9', label: 'Low' };
+export function severityToColor(sev: number): { hex: string; label: string; healthyHex: string } {
+  if (sev >= 0.7) return { hex: '#e53935', label: 'Severe',   healthyHex: '#ad8c8c' };
+  if (sev >= 0.4) return { hex: '#ff9800', label: 'Moderate', healthyHex: '#d9bf80' };
+  if (sev >= 0.2) return { hex: '#ffd54f', label: 'Mild',     healthyHex: '#99c7a6' };
+  return                  { hex: '#90caf9', label: 'Low',      healthyHex: '#8cd1e0' };
 }

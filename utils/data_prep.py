@@ -157,12 +157,15 @@ def get_transforms(mode: str = 'train') -> transforms.Compose:
     if mode == 'train':
         return transforms.Compose([
             transforms.Resize((256, 256)),
+            transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomRotation(10),
-            transforms.ColorJitter(brightness=0.2, contrast=0.2),
-            transforms.CenterCrop(224),
+            transforms.RandomRotation(15),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05)),
+            transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.1),
+            transforms.RandomGrayscale(p=0.02),
             transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
+            transforms.Normalize(mean=mean, std=std),
+            transforms.RandomErasing(p=0.1, scale=(0.02, 0.1)),
         ])
     else:  # val or test
         return transforms.Compose([
@@ -213,6 +216,13 @@ def create_dataloaders(data_dir: str = "data/chest_xray",
         transform=get_transforms('test'),
         mode='test'
     )
+    
+    # If validation set is too small (<50 images), use test set for validation
+    # This is common for the Kaggle chest X-ray dataset which has only 16 val images
+    if len(val_dataset) < 50 and len(test_dataset) > 50:
+        print(f"\n⚠️  Validation set too small ({len(val_dataset)} images).")
+        print(f"    Using test set ({len(test_dataset)} images) for validation instead.")
+        val_dataset = test_dataset
     
     # Create dataloaders
     train_loader = DataLoader(

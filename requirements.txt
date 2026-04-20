@@ -1,18 +1,56 @@
+# Core ML / Deep Learning
 torch>=2.0.0
 torchvision>=0.15.0
+timm>=0.9.0
+
+# Web UI
 streamlit>=1.28.0
 plotly>=5.17.0
+
+# REST API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+
+# Data / Visualization
 numpy>=1.24.0
-opencv-python-headless>=4.8.0
-scikit-learn>=1.3.0
+pandas>=2.0.0
 matplotlib>=3.7.0
 seaborn>=0.12.0
 Pillow>=10.0.0
-kaggle>=1.5.16
+opencv-python-headless>=4.8.0
+scikit-learn>=1.3.0
+scikit-image>=0.21.0
+tqdm>=4.65.0
+
+# Medical Imaging
+pydicom>=2.4.0
+
+# NLP / Reports
+nltk>=3.8.0
+reportlab>=4.0.0
+
+# 3D Models
 trimesh>=4.0.0
 pygltflib>=1.16.0
-nltk>=3.8.0
-pandas>=2.0.0
-tqdm>=4.65.0
-reportlab>=4.0.0
+
+# Authentication / Security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0.0
+
+# Model Export
+onnx>=1.14.0
+onnxruntime>=1.16.0
+
+# XAI (Explainability)
+lime>=0.2.0
+shap>=0.43.0
+
+# Utilities
+kaggle>=1.5.16
 requests>=2.31.0
+
+# Optional: LLM-powered reports (uncomment if using OpenAI)
+# openai>=1.3.0

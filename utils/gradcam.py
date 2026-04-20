@@ -230,7 +230,7 @@ def tensor_to_numpy_image(tensor: torch.Tensor) -> np.ndarray:
 def generate_gradcam_visualization(model: torch.nn.Module,
                                   input_tensor: torch.Tensor,
                                   original_image: np.ndarray,
-                                  target_class: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, float]:
+                                  target_class: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray]:
     """
     Complete Grad-CAM visualization pipeline.
     
@@ -241,7 +241,11 @@ def generate_gradcam_visualization(model: torch.nn.Module,
         target_class: Target class (None = predicted class)
         
     Returns:
-        Tuple of (heatmap, overlaid_image, cam_intensity)
+        Tuple of (heatmap, overlaid_image, cam_intensity, cam_raw)
+        - heatmap: JET-colorized heatmap (H, W, 3) uint8
+        - overlaid_image: heatmap blended on original (H, W, 3) uint8
+        - cam_intensity: scalar mean activation in high regions
+        - cam_raw: raw activation map (H, W) float in [0, 1]
     """
     # Get target layer
     target_layer = get_target_layer(model, "densenet121")
@@ -249,10 +253,13 @@ def generate_gradcam_visualization(model: torch.nn.Module,
     # Create Grad-CAM instance
     gradcam = GradCAM(model, target_layer)
     
-    # Generate heatmap
+    # Generate raw CAM and colorized heatmap
     cam = gradcam.generate_cam(input_tensor, target_class)
     heatmap = gradcam.generate_heatmap(input_tensor, target_class, 
                                        size=(original_image.shape[1], original_image.shape[0]))
+    
+    # Resize raw CAM to image dimensions for downstream use
+    cam_resized = cv2.resize(cam, (original_image.shape[1], original_image.shape[0]))
     
     # Overlay on original image
     overlaid = overlay_heatmap(original_image, heatmap, alpha=0.4)
@@ -260,7 +267,7 @@ def generate_gradcam_visualization(model: torch.nn.Module,
     # Calculate average intensity in high-activation regions
     cam_intensity = cam[cam > 0.5].mean() if (cam > 0.5).any() else cam.mean()
     
-    return heatmap, overlaid, float(cam_intensity)
+    return heatmap, overlaid, float(cam_intensity), cam_resized
 
 
 if __name__ == "__main__":
