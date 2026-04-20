@@ -466,8 +466,8 @@ This AI system is designed for **educational and research purposes only**. It is
 ## 📧 Contact
 
 For questions, issues, or collaboration:
-- **Email**: your.email@example.com
-- **GitHub Issues**: [Project Issues](https://github.com/username/repo/issues)
+- **Email**:naralavenugopalreddy@gmail.com
+- **GitHub Issues**: [Project Issues](https://github.com/venugopalreddynarala/repo/issues)
 
 ---
 
